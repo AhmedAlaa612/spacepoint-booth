@@ -2,6 +2,8 @@
 #include "esp_camera.h"
 #include "esp_sleep.h"
 #include "esp_system.h"
+#include "soc/soc.h"
+#include "soc/rtc_cntl_reg.h"
 #include <ArduinoJson.h>
 #include <PubSubClient.h>
 #include <WiFi.h>
@@ -139,7 +141,9 @@ void enterDeepSleep(int seconds);
 
 // ===================== SETUP =====================
 void setup() {
+  WRITE_PERI_REG(RTC_CNTL_BROWN_OUT_REG, 0); // Disable brownout detector
   Serial.begin(115200);
+  delay(500);
   Serial.println("\n========================================");
   Serial.println("  SpacePoint CubeSat Camera Starting...");
   Serial.println("========================================");
@@ -268,29 +272,22 @@ void initializeCamera() {
   cfg.pin_reset = RESET_GPIO_NUM;
   cfg.xclk_freq_hz = 20000000;
   cfg.pixel_format = PIXFORMAT_JPEG;
-  cfg.fb_count = 1;
   cfg.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+  cfg.fb_count = 1;
 
   if (psramFound()) {
-    Serial.println("PSRAM detected — using external PSRAM for frame buffer (VGA)");
+    Serial.println("PSRAM detected — using external PSRAM (VGA)");
     cfg.frame_size = FRAMESIZE_VGA;
     cfg.jpeg_quality = 12; // 0=best, 63=worst
     cfg.fb_location = CAMERA_FB_IN_PSRAM;
   } else {
-    Serial.println("No PSRAM — using internal DRAM (QQVGA)");
-    cfg.frame_size = FRAMESIZE_QQVGA;
-    cfg.jpeg_quality = 25;
+    Serial.println("No PSRAM — using internal DRAM (QVGA)");
+    cfg.frame_size = FRAMESIZE_QVGA;
+    cfg.jpeg_quality = 12;
     cfg.fb_location = CAMERA_FB_IN_DRAM;
   }
 
   esp_err_t err = esp_camera_init(&cfg);
-  if (err != ESP_OK) {
-    Serial.printf("Primary camera init failed (0x%x). Retrying with 10MHz clock & QVGA...\n", err);
-    cfg.xclk_freq_hz = 10000000;
-    cfg.frame_size = FRAMESIZE_QVGA;
-    err = esp_camera_init(&cfg);
-  }
-
   if (err != ESP_OK) {
     Serial.printf("Camera init FAILED: 0x%x\n", err);
     cameraInitialized = false;
