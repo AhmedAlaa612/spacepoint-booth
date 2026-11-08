@@ -18,7 +18,7 @@ app.use(express.urlencoded({ limit: "50mb", extended: true }));
 // ===================== IN-MEMORY STATE =====================
 // Active satellites: satId -> { satId, boothName, status, cameraReady, heap, lastSeen }
 const satellites = new Map();
-// Active capture requests: requestId -> { res, timer, satId }
+// Active capture requests: requestId -> { res, timer, satId, chunks, receivedChunks }
 const pendingRequests = new Map();
 
 const SATELLITE_TIMEOUT_SECONDS = 30;
@@ -77,7 +77,7 @@ mqttClient.on("message", (topic, messageBuffer) => {
     return;
   }
 
-  // 2. Photo response message: spacepoint/{satId}/photo
+  // 2. Photo response message: spacepoint/{satId}/photo (single or multi-chunk)
   if (msgType === "photo") {
     try {
       const payload = JSON.parse(messageBuffer.toString("utf8"));
@@ -90,10 +90,9 @@ mqttClient.on("message", (topic, messageBuffer) => {
         return;
       }
 
-      clearTimeout(pending.timer);
-      pendingRequests.delete(reqId);
-
       if (payload.error) {
+        clearTimeout(pending.timer);
+        pendingRequests.delete(reqId);
         console.error(`❌ ESP32 (${satId}) reported error for ${reqId}: ${payload.error}`);
         if (!pending.res.headersSent) {
           return pending.res.status(200).json({
@@ -102,8 +101,30 @@ mqttClient.on("message", (topic, messageBuffer) => {
             requestId: reqId,
           });
         }
-      } else if (payload.imageBase64) {
-        console.log(`📸 Received photo from ${satId} for ${reqId} (${payload.imageBase64.length} chars)`);
+        return;
+      }
+
+      // Multi-chunk reassembly for high-resolution photos
+      if (typeof payload.totalChunks === "number" && typeof payload.chunkIndex === "number") {
+        if (!pending.chunks) {
+          pending.chunks = new Array(payload.totalChunks).fill(null);
+          pending.receivedChunks = 0;
+        }
+        if (pending.chunks[payload.chunkIndex] === null) {
+          pending.chunks[payload.chunkIndex] = payload.chunk || "";
+          pending.receivedChunks++;
+        }
+        console.log(`📦 Chunk ${payload.chunkIndex + 1}/${payload.totalChunks} received from ${satId} for ${reqId}`);
+        if (pending.receivedChunks < payload.totalChunks) {
+          return; // Wait for remaining chunks
+        }
+        payload.imageBase64 = pending.chunks.join("");
+      }
+
+      if (payload.imageBase64) {
+        clearTimeout(pending.timer);
+        pendingRequests.delete(reqId);
+        console.log(`📸 Completed photo from ${satId} for ${reqId} (${payload.imageBase64.length} chars)`);
         if (!pending.res.headersSent) {
           return pending.res.status(200).json({
             success: true,
@@ -140,7 +161,7 @@ app.get("/api/health", (req, res) => {
     status: "ok",
     mqttConnected: mqttClient.connected,
     onlineSatellites: satellites.size,
-    message: "CubeSat Backend (Direct MQTT) is running!",
+    message: "CubeSat Backend (Direct MQTT + Multi-Chunk HD) is running!",
   });
 });
 
@@ -182,7 +203,7 @@ app.post("/api/take-photo", (req, res) => {
       }
     }, CAPTURE_TIMEOUT_MS);
 
-    pendingRequests.set(requestId, { res, timer, satId });
+    pendingRequests.set(requestId, { res, timer, satId, chunks: null, receivedChunks: 0 });
 
     mqttClient.publish(commandTopic, commandPayload, { qos: 0 }, (err) => {
       if (err) {
