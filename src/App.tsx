@@ -37,6 +37,7 @@ interface SatelliteInfo {
 }
 
 export default function App() {
+  const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [photoTaken, setPhotoTaken] = useState(false);
   const [statusMessage, setStatusMessage] = useState('');
@@ -132,32 +133,45 @@ export default function App() {
   };
 
   const handleSaveAndSend = async () => {
-    if (!email || !requestId || !imageBase64) {
+    if (!email || !imageBase64) {
       setStatusMessage('⚠ No photo available yet. Please request a photo first.');
       return;
     }
 
     try {
       setIsSending(true);
-      setStatusMessage('⏳ Sending email...');
+      setStatusMessage('⏳ Uploading to SpacePoint cloud and dispatching your email...');
       
-      const apiUrl = import.meta.env.VITE_API_URL || 'http://localhost:3001';
-      const response = await fetch(`${apiUrl}/api/send-email`, {
+      const params = new URLSearchParams(window.location.search);
+      const eventSlug = params.get('event') || import.meta.env.VITE_DEFAULT_EVENT_SLUG || 'sef-2026';
+      const portalApiUrl = import.meta.env.VITE_PORTAL_API_URL || 'https://portal.spacepoint.ae/api';
+
+      const response = await fetch(`${portalApiUrl}/public/booth/capture`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, imageBase64, requestId }),
+        body: JSON.stringify({
+          event_slug: eventSlug,
+          participant_name: name.trim() || email.split('@')[0],
+          participant_email: email.trim().toLowerCase(),
+          image_base64: imageBase64,
+          satellite_id: selectedSatId || undefined,
+        }),
       });
 
       const data = await response.json();
 
       if (response.ok && data.success) {
-        setStatusMessage('✅ Email sent! Check your inbox.');
+        if (data.lms_account_created) {
+          setStatusMessage('✅ Photo sent! Check your inbox for your picture and your SpacePoint Student LMS activation link!');
+        } else {
+          setStatusMessage('✅ Photo captured and emailed! Check your inbox.');
+        }
       } else {
-        setStatusMessage('❌ Failed to send: ' + (data.error || 'Unknown error'));
+        setStatusMessage('❌ Failed to process: ' + (data.detail || data.error || 'Server error'));
       }
     } catch (error) {
-      console.error('Error sending email:', error);
-      setStatusMessage('❌ Network error. Please try again.');
+      console.error('Error sending photo:', error);
+      setStatusMessage('❌ Network error communicating with SpacePoint Portal.');
     } finally {
       setIsSending(false);
     }
@@ -256,6 +270,13 @@ export default function App() {
                     </div>
                   )}
                 </div>
+
+                <BrutalistInput
+                  type="text"
+                  placeholder="Your Full Name"
+                  value={name}
+                  onChange={(e) => setName(e.target.value)}
+                />
 
                 <BrutalistInput
                   type="email"
