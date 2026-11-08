@@ -249,61 +249,71 @@ void connectToWiFi() {
 
 // ===================== CAMERA INIT =====================
 void initializeCamera() {
-  Serial.println("Initializing camera (AI-Thinker ESP32-CAM)...");
+  Serial.println("Initializing AI-Thinker ESP32-CAM...");
 
-  camera_config_t cfg;
-  cfg.ledc_channel = LEDC_CHANNEL_0;
-  cfg.ledc_timer = LEDC_TIMER_0;
-  cfg.pin_d0 = Y2_GPIO_NUM;
-  cfg.pin_d1 = Y3_GPIO_NUM;
-  cfg.pin_d2 = Y4_GPIO_NUM;
-  cfg.pin_d3 = Y5_GPIO_NUM;
-  cfg.pin_d4 = Y6_GPIO_NUM;
-  cfg.pin_d5 = Y7_GPIO_NUM;
-  cfg.pin_d6 = Y8_GPIO_NUM;
-  cfg.pin_d7 = Y9_GPIO_NUM;
-  cfg.pin_xclk = XCLK_GPIO_NUM;
-  cfg.pin_pclk = PCLK_GPIO_NUM;
-  cfg.pin_vsync = VSYNC_GPIO_NUM;
-  cfg.pin_href = HREF_GPIO_NUM;
-  cfg.pin_sccb_sda = SIOD_GPIO_NUM;
-  cfg.pin_sccb_scl = SIOC_GPIO_NUM;
-  cfg.pin_pwdn = PWDN_GPIO_NUM;
-  cfg.pin_reset = RESET_GPIO_NUM;
-  cfg.xclk_freq_hz = 20000000;
-  cfg.pixel_format = PIXFORMAT_JPEG;
-  cfg.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
-  cfg.fb_count = 1;
+  camera_config_t config = {};
+  config.ledc_channel = LEDC_CHANNEL_0;
+  config.ledc_timer = LEDC_TIMER_0;
+  config.pin_d0 = Y2_GPIO_NUM;
+  config.pin_d1 = Y3_GPIO_NUM;
+  config.pin_d2 = Y4_GPIO_NUM;
+  config.pin_d3 = Y5_GPIO_NUM;
+  config.pin_d4 = Y6_GPIO_NUM;
+  config.pin_d5 = Y7_GPIO_NUM;
+  config.pin_d6 = Y8_GPIO_NUM;
+  config.pin_d7 = Y9_GPIO_NUM;
+  config.pin_xclk = XCLK_GPIO_NUM;
+  config.pin_pclk = PCLK_GPIO_NUM;
+  config.pin_vsync = VSYNC_GPIO_NUM;
+  config.pin_href = HREF_GPIO_NUM;
+  config.pin_sccb_sda = SIOD_GPIO_NUM;
+  config.pin_sccb_scl = SIOC_GPIO_NUM;
+  config.pin_pwdn = PWDN_GPIO_NUM;
+  config.pin_reset = RESET_GPIO_NUM;
+  config.xclk_freq_hz = 20000000;
+  config.pixel_format = PIXFORMAT_JPEG;
 
-  size_t freePsram = ESP.getFreePsram();
-  Serial.printf("Internal Free Heap: %u bytes, Free PSRAM: %u bytes\n", ESP.getFreeHeap(), freePsram);
-
-  if (psramFound() && freePsram > 100000) {
-    Serial.println("PSRAM verified — using external PSRAM (VGA)");
-    cfg.frame_size = FRAMESIZE_VGA;
-    cfg.jpeg_quality = 12; // 0=best, 63=worst
-    cfg.fb_location = CAMERA_FB_IN_PSRAM;
+  if (psramFound()) {
+    Serial.println("PSRAM detected: configuring UXGA pre-allocation (fb_count=2)");
+    config.frame_size = FRAMESIZE_UXGA;
+    config.jpeg_quality = 10;
+    config.fb_count = 2;
   } else {
-    Serial.println("No functional PSRAM — using internal DRAM (QVGA)");
-    cfg.frame_size = FRAMESIZE_QVGA;
-    cfg.jpeg_quality = 15;
-    cfg.fb_location = CAMERA_FB_IN_DRAM;
+    Serial.println("No PSRAM: configuring SVGA (fb_count=1)");
+    config.frame_size = FRAMESIZE_SVGA;
+    config.jpeg_quality = 12;
+    config.fb_count = 1;
   }
 
-  esp_err_t err = esp_camera_init(&cfg);
-  if (err != ESP_OK && cfg.fb_location == CAMERA_FB_IN_PSRAM) {
-    Serial.printf("PSRAM camera init failed (0x%x). Retrying in internal DRAM (QVGA)...\n", err);
-    cfg.frame_size = FRAMESIZE_QVGA;
-    cfg.jpeg_quality = 15;
-    cfg.fb_location = CAMERA_FB_IN_DRAM;
-    err = esp_camera_init(&cfg);
-  }
-
+  esp_err_t err = esp_camera_init(&config);
   if (err != ESP_OK) {
     Serial.printf("Camera init FAILED: 0x%x\n", err);
     cameraInitialized = false;
     return;
   }
+
+  sensor_t *s = esp_camera_sensor_get();
+  if (s) {
+    if (s->id.PID == OV3660_PID) {
+      s->set_vflip(s, 1);
+      s->set_brightness(s, 1);
+      s->set_saturation(s, -2);
+    }
+    // Set active resolution to VGA (640x480) for photobooth
+    s->set_framesize(s, FRAMESIZE_VGA);
+    s->set_brightness(s, 0);
+    s->set_contrast(s, 0);
+    s->set_saturation(s, 0);
+    s->set_whitebal(s, 1);
+    s->set_awb_gain(s, 1);
+    s->set_exposure_ctrl(s, 1);
+    s->set_aec2(s, 1);
+    s->set_gain_ctrl(s, 1);
+  }
+
+  cameraInitialized = true;
+  Serial.println("Camera initialized successfully!");
+}
 
   // Fine-tune image sensor
   sensor_t *s = esp_camera_sensor_get();
