@@ -275,19 +275,30 @@ void initializeCamera() {
   cfg.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
   cfg.fb_count = 1;
 
-  if (psramFound()) {
-    Serial.println("PSRAM detected — using external PSRAM (VGA)");
+  size_t freePsram = ESP.getFreePsram();
+  Serial.printf("Internal Free Heap: %u bytes, Free PSRAM: %u bytes\n", ESP.getFreeHeap(), freePsram);
+
+  if (psramFound() && freePsram > 100000) {
+    Serial.println("PSRAM verified — using external PSRAM (VGA)");
     cfg.frame_size = FRAMESIZE_VGA;
     cfg.jpeg_quality = 12; // 0=best, 63=worst
     cfg.fb_location = CAMERA_FB_IN_PSRAM;
   } else {
-    Serial.println("No PSRAM — using internal DRAM (QVGA)");
+    Serial.println("No functional PSRAM — using internal DRAM (QVGA)");
     cfg.frame_size = FRAMESIZE_QVGA;
-    cfg.jpeg_quality = 12;
+    cfg.jpeg_quality = 15;
     cfg.fb_location = CAMERA_FB_IN_DRAM;
   }
 
   esp_err_t err = esp_camera_init(&cfg);
+  if (err != ESP_OK && cfg.fb_location == CAMERA_FB_IN_PSRAM) {
+    Serial.printf("PSRAM camera init failed (0x%x). Retrying in internal DRAM (QVGA)...\n", err);
+    cfg.frame_size = FRAMESIZE_QVGA;
+    cfg.jpeg_quality = 15;
+    cfg.fb_location = CAMERA_FB_IN_DRAM;
+    err = esp_camera_init(&cfg);
+  }
+
   if (err != ESP_OK) {
     Serial.printf("Camera init FAILED: 0x%x\n", err);
     cameraInitialized = false;
