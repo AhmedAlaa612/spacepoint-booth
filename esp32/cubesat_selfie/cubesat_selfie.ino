@@ -262,31 +262,35 @@ void initializeCamera() {
   cfg.pin_pclk = PCLK_GPIO_NUM;
   cfg.pin_vsync = VSYNC_GPIO_NUM;
   cfg.pin_href = HREF_GPIO_NUM;
-  cfg.pin_sscb_sda = SIOD_GPIO_NUM;
-  cfg.pin_sscb_scl = SIOC_GPIO_NUM;
+  cfg.pin_sccb_sda = SIOD_GPIO_NUM;
+  cfg.pin_sccb_scl = SIOC_GPIO_NUM;
   cfg.pin_pwdn = PWDN_GPIO_NUM;
   cfg.pin_reset = RESET_GPIO_NUM;
   cfg.xclk_freq_hz = 20000000;
   cfg.pixel_format = PIXFORMAT_JPEG;
+  cfg.fb_count = 1;
+  cfg.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
 
   if (psramFound()) {
-    Serial.println("PSRAM detected — VGA @ quality 12");
+    Serial.println("PSRAM detected — using external PSRAM for frame buffer (VGA)");
     cfg.frame_size = FRAMESIZE_VGA;
-    cfg.jpeg_quality =
-        12;           // 0=best, 63=worst — 12 gives good quality/size balance
-    cfg.fb_count = 2; // double-buffer with PSRAM for faster capture
-    cfg.grab_mode = CAMERA_GRAB_LATEST; // always grab freshest frame
+    cfg.jpeg_quality = 12; // 0=best, 63=worst
+    cfg.fb_location = CAMERA_FB_IN_PSRAM;
   } else {
-    // No PSRAM: use QQVGA (160x120) — needs far less DMA memory than QVGA.
-    // Higher jpeg_quality number = smaller file = safer for MQTT without PSRAM.
-    Serial.println("No PSRAM — QQVGA @ quality 25");
+    Serial.println("No PSRAM — using internal DRAM (QQVGA)");
     cfg.frame_size = FRAMESIZE_QQVGA;
     cfg.jpeg_quality = 25;
-    cfg.fb_count = 1;
-    cfg.grab_mode = CAMERA_GRAB_WHEN_EMPTY;
+    cfg.fb_location = CAMERA_FB_IN_DRAM;
   }
 
   esp_err_t err = esp_camera_init(&cfg);
+  if (err != ESP_OK) {
+    Serial.printf("Primary camera init failed (0x%x). Retrying with 10MHz clock & QVGA...\n", err);
+    cfg.xclk_freq_hz = 10000000;
+    cfg.frame_size = FRAMESIZE_QVGA;
+    err = esp_camera_init(&cfg);
+  }
+
   if (err != ESP_OK) {
     Serial.printf("Camera init FAILED: 0x%x\n", err);
     cameraInitialized = false;
