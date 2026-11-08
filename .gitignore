@@ -1,0 +1,57 @@
+# ========================
+# Dependencies
+# ========================
+node_modules/
+.pnp
+.pnp.js
+
+# ========================
+# Environment / Secrets
+# ========================
+# NEVER commit real credentials — copy .env.example and fill in locally
+.env
+.env.local
+.env.*.local
+backend/.env
+
+# ========================
+# Build Output
+# ========================
+dist/
+build/
+.vite/
+
+# ========================
+# Logs
+# ========================
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# ========================
+# OS / Editor junk
+# ========================
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.suo
+*.user
+
+# ========================
+# Firebase / GCloud
+# ========================
+.firebase/
+firebase-debug.log
+firestore-debug.log
+.firebaserc
+
+# ========================
+# Python
+# ========================
+__pycache__/
+*.pyc
+*.pyo
+.venv/
+venv/
